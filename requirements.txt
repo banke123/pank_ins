@@ -1,4 +1,22 @@
-PyQt6>=6.4.0
-pykka>=3.1.1
+# AI示波器控制系统依赖库
+
+# UI框架
+PySide6>=6.5.0
+
+# AI框架
+langchain>=0.1.0
+langchain-community>=0.1.0
+
+# Actor系统
+pykka>=4.0.0
+
+# 数据分析
 numpy>=1.24.0
 matplotlib>=3.7.0
+scipy>=1.11.0
+
+# 配置文件
+pyyaml>=6.0
+
+# Markdown支持
+markdown>=3.4.0

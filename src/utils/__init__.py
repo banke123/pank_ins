@@ -11,5 +11,6 @@
 """
 
 from .logger_config import setup_logging, get_logger
+from .demo_data import demo_generator, DemoDataGenerator
 
-__all__ = ['setup_logging', 'get_logger'] 
+__all__ = ['setup_logging', 'get_logger', 'demo_generator', 'DemoDataGenerator'] 

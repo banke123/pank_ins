@@ -1,355 +1,296 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 """
 主窗口模块
 
-AI示波器控制系统的主用户界面。
-
-@author: PankIns Team
-@version: 1.0.0
+这个模块提供了Pank Ins的主界面
+包含左侧边栏、右侧AI对话窗口、中间工作区和底部日志区域
+支持拖动调整各区域大小
 """
 
-import logging
-from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QSplitter, QFrame, QLabel
-from PyQt6.QtCore import Qt, pyqtSignal, QPropertyAnimation, QEasingCurve
-from PyQt6.QtGui import QIcon, QFont
+import sys
+from PySide6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout,
+    QSplitter
+)
+from PySide6.QtCore import Qt
 
-from .toolbar import ToolBar
-from .workflow_panel import WorkflowPanel
-from .workspace_panel import WorkspacePanel
-from .chat_panel import ChatPanel
-
-
-class ModernSplitter(QSplitter):
-    """现代化分割器"""
-    
-    def __init__(self, orientation, parent=None):
-        super().__init__(orientation, parent)
-        self.setHandleWidth(1)
-        self.setStyleSheet("""
-            QSplitter::handle {
-                background: #E0E0E0;
-                margin: 0px;
-            }
-            QSplitter::handle:hover {
-                background: #4A90E2;
-            }
-            QSplitter::handle:pressed {
-                background: #357ABD;
-            }
-        """)
+# 导入模块化组件
+from .left_sidebar import LeftSidebar
+from .work_area import WorkArea
+from .ai_chat_panel import AIChatPanel
+from .log_area import LogArea
 
 
 class MainWindow(QMainWindow):
     """
     主窗口类
     
-    提供AI示波器控制系统的主用户界面
+    整合所有UI组件，提供主界面
     """
     
-    # 信号定义
-    status_updated = pyqtSignal(str)
-    data_received = pyqtSignal(dict)
-    
-    def __init__(self, system_manager):
-        """
-        初始化主窗口
-        
-        @param {SystemManager} system_manager - 系统管理器实例
-        """
+    def __init__(self):
         super().__init__()
-        self.system_manager = system_manager
-        self.logger = logging.getLogger(__name__)
+        self.setup_ui()
+        self.setup_connections()
         
-        # 窗口属性
-        self.setWindowTitle("AI示波器控制系统 v1.0.0")
-        self.setGeometry(100, 100, 1600, 900)
-        self.setMinimumSize(1200, 700)
+    def setup_ui(self):
+        """
+        设置主窗口界面
+        """
+        # 设置窗口属性
+        self.setWindowTitle("Pank Ins - AI 控制示波器系统")
+        self.setGeometry(100, 100, 1400, 900)
         
         # 设置窗口样式
-        self._setup_window_style()
-        
-        # 初始化UI
-        self._init_ui()
-        self._setup_connections()
-        
-        self.logger.info("主窗口初始化完成")
-    
-    def _setup_window_style(self):
-        """设置窗口样式"""
         self.setStyleSheet("""
             QMainWindow {
-                background: #F5F5F5;
-                color: #333333;
-                font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'Segoe UI', sans-serif;
-                font-size: 9pt;
-                font-weight: normal;
-            }
-            
-            QMainWindow::separator {
-                background: #E0E0E0;
-                width: 1px;
-                height: 1px;
-            }
-            
-            QStatusBar {
-                background: #FFFFFF;
-                border-top: 1px solid #E0E0E0;
-                color: #666666;
-                font-size: 9pt;
-                font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif;
-                padding: 2px 8px;
-            }
-            
-            QLabel {
-                font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'Segoe UI', sans-serif;
-                font-weight: normal;
-            }
-            
-            QTextEdit {
-                font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'Segoe UI', sans-serif;
-                font-weight: normal;
-            }
-            
-            QPushButton {
-                font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'Segoe UI', sans-serif;
-                font-weight: normal;
+                background-color: #ffffff;
             }
         """)
-    
-    def _init_ui(self):
+        
+        # 创建菜单栏
+        self.create_menu_bar()
+        
+        # 创建状态栏
+        self.create_status_bar()
+        
+        # 创建中央组件
+        self.create_central_widget()
+        
+    def create_menu_bar(self):
         """
-        初始化用户界面
+        创建菜单栏
         """
-        # 创建中央部件
+        menubar = self.menuBar()
+        
+        # 文件菜单
+        file_menu = menubar.addMenu("文件(&F)")
+        file_menu.addAction("新建项目", self.new_project)
+        file_menu.addAction("打开项目", self.open_project)
+        file_menu.addSeparator()
+        file_menu.addAction("退出", self.close)
+        
+        # 编辑菜单
+        edit_menu = menubar.addMenu("编辑(&E)")
+        edit_menu.addAction("设置", self.open_settings)
+        
+        # 视图菜单
+        view_menu = menubar.addMenu("视图(&V)")
+        view_menu.addAction("重置布局", self.reset_layout)
+        
+        # 工具菜单
+        tools_menu = menubar.addMenu("工具(&T)")
+        tools_menu.addAction("设备管理", self.open_device_manager)
+        tools_menu.addAction("插件管理", self.open_plugin_manager)
+        
+        # 帮助菜单
+        help_menu = menubar.addMenu("帮助(&H)")
+        help_menu.addAction("关于", self.show_about)
+        
+    def create_status_bar(self):
+        """
+        创建状态栏
+        """
+        status_bar = self.statusBar()
+        status_bar.setStyleSheet("""
+            QStatusBar {
+                background-color: #f8fafc;
+                border-top: 1px solid #e2e8f0;
+                color: #718096;
+                font-size: 11px;
+            }
+        """)
+        
+        status_bar.showMessage("就绪")
+        
+    def create_central_widget(self):
+        """
+        创建中央组件
+        """
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         
-        # 主布局
-        main_layout = QVBoxLayout(central_widget)
-        main_layout.setContentsMargins(8, 8, 8, 8)
-        main_layout.setSpacing(8)
-        
-        # 工具栏
-        self.toolbar = ToolBar(self)
-        self.addToolBar(self.toolbar)
-        
-        # 创建主要内容区域
-        content_frame = QFrame()
-        content_frame.setStyleSheet("""
-            QFrame {
-                background: #F5F5F5;
-                border: none;
+        # 创建主分割器（水平）
+        main_splitter = QSplitter(Qt.Horizontal)
+        main_splitter.setStyleSheet("""
+            QSplitter::handle {
+                background-color: #e2e8f0;
+                width: 2px;
             }
-        """)
-        content_layout = QVBoxLayout(content_frame)
-        content_layout.setContentsMargins(4, 4, 4, 4)
-        content_layout.setSpacing(4)
-        
-        # 创建水平分割器
-        splitter = ModernSplitter(Qt.Orientation.Horizontal)
-        
-        # 流程卡片面板
-        self.workflow_panel = WorkflowPanel()
-        workflow_container = self._create_panel_container("流程管理", self.workflow_panel)
-        splitter.addWidget(workflow_container)
-        
-        # 工作区面板
-        self.workspace_panel = WorkspacePanel()
-        workspace_container = self._create_panel_container("工作区", self.workspace_panel)
-        splitter.addWidget(workspace_container)
-        
-        # AI对话面板
-        self.chat_panel = ChatPanel()
-        splitter.addWidget(self.chat_panel)
-        
-        # 设置分割器比例 - 调整为更合理的比例
-        splitter.setSizes([220, 900, 380])  # 流程图更小，工作区更大，对话区适中
-        
-        content_layout.addWidget(splitter)
-        main_layout.addWidget(content_frame)
-        
-        # 状态栏
-        self.statusBar().showMessage("就绪")
-        self.statusBar().setFont(QFont("Microsoft YaHei", 9))
-    
-    def _create_panel_container(self, title: str, widget: QWidget) -> QFrame:
-        """
-        创建面板容器
-        
-        @param {str} title - 面板标题
-        @param {QWidget} widget - 面板内容
-        @returns {QFrame} 容器框架
-        """
-        container = QFrame()
-        container.setStyleSheet("""
-            QFrame {
-                background: #FFFFFF;
-                border: none;
+            QSplitter::handle:hover {
+                background-color: #cbd5e0;
             }
         """)
         
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        # 创建左侧边栏
+        self.left_sidebar = LeftSidebar()
+        main_splitter.addWidget(self.left_sidebar)
         
-        # 标题栏
-        header = QFrame()
-        header.setFixedHeight(32)
-        header.setStyleSheet("""
-            QFrame {
-                background: #F0F0F0;
-                border-bottom: 1px solid #E0E0E0;
+        # 创建中间区域分割器（垂直）
+        middle_splitter = QSplitter(Qt.Vertical)
+        middle_splitter.setStyleSheet("""
+            QSplitter::handle {
+                background-color: #e2e8f0;
+                height: 2px;
+            }
+            QSplitter::handle:hover {
+                background-color: #cbd5e0;
             }
         """)
         
-        header_layout = QVBoxLayout(header)
-        header_layout.setContentsMargins(10, 0, 10, 0)
-        header_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        # 创建工作区
+        self.work_area = WorkArea()
+        middle_splitter.addWidget(self.work_area)
         
-        title_label = QLabel(title)
-        title_label.setFont(QFont("Microsoft YaHei", 8, QFont.Weight.Bold))
-        title_label.setStyleSheet("color: #555555; background: transparent;")
-        header_layout.addWidget(title_label)
+        # 创建日志区
+        self.log_area = LogArea()
+        middle_splitter.addWidget(self.log_area)
         
-        # 内容区域
-        content_container = QFrame()
-        content_container.setStyleSheet("""
-            QFrame {
-                background: transparent;
-                border: none;
-            }
-        """)
-        content_layout = QVBoxLayout(content_container)
-        content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.addWidget(widget)
+        # 设置中间分割器的比例
+        middle_splitter.setSizes([600, 200])  # 工作区:日志区 = 3:1
         
-        layout.addWidget(header)
-        layout.addWidget(content_container)
+        main_splitter.addWidget(middle_splitter)
         
-        return container
-    
-    def _setup_connections(self):
+        # 创建右侧AI对话面板
+        self.ai_chat_panel = AIChatPanel()
+        main_splitter.addWidget(self.ai_chat_panel)
+        
+        # 设置主分割器的比例
+        main_splitter.setSizes([250, 900, 350])  # 左:中:右 = 1:3.6:1.4
+        
+        # 设置布局
+        layout = QVBoxLayout()
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.addWidget(main_splitter)
+        central_widget.setLayout(layout)
+        
+    def setup_connections(self):
         """
         设置信号连接
         """
-        # 工具栏连接
-        self.toolbar.connect_action.triggered.connect(self._on_connect_clicked)
-        self.toolbar.acquire_action.triggered.connect(self._on_acquire_clicked)
-        self.toolbar.save_action.triggered.connect(self._on_save_clicked)
-        self.toolbar.export_action.triggered.connect(self._on_export_clicked)
-        self.toolbar.settings_action.triggered.connect(self._on_settings_clicked)
+        # 连接左侧边栏信号
+        self.left_sidebar.process_selected.connect(self.on_process_selected)
         
-        # 流程卡片连接
-        self.workflow_panel.card_selected.connect(self._on_workflow_card_selected)
+        # 连接AI对话面板信号
+        self.ai_chat_panel.message_sent.connect(self.on_ai_message_sent)
         
-        # AI对话连接
-        self.chat_panel.message_sent.connect(self._on_chat_message_sent)
+        # 连接工作区信号
+        self.work_area.process_action_requested.connect(self.on_process_action_requested)
         
-        # 信号连接
-        self.status_updated.connect(self._on_status_updated)
-        self.data_received.connect(self._on_data_received)
-    
-    def _on_connect_clicked(self, checked):
+    def on_process_selected(self, process_data):
         """
-        连接按钮点击处理
-        """
-        if checked:
-            self.logger.info("连接设备")
-            self.workspace_panel.append_log("正在连接设备...", "INFO")
-            self.statusBar().showMessage("正在连接设备...")
-            # 模拟连接成功
-            self.toolbar.update_device_status(True)
-            self.statusBar().showMessage("设备已连接")
-        else:
-            self.logger.info("断开设备")
-            self.workspace_panel.append_log("设备已断开", "INFO")
-            self.toolbar.update_device_status(False)
-            self.statusBar().showMessage("设备已断开")
-    
-    def _on_acquire_clicked(self, checked):
-        """
-        采集按钮点击处理
-        """
-        if checked:
-            self.logger.info("开始数据采集")
-            self.workspace_panel.append_log("开始数据采集...", "INFO")
-            self.toolbar.acquire_action.setText("停止采集")
-            self.statusBar().showMessage("正在采集数据...")
-        else:
-            self.logger.info("停止数据采集")
-            self.workspace_panel.append_log("数据采集已停止", "INFO")
-            self.toolbar.acquire_action.setText("开始采集")
-            self.statusBar().showMessage("数据采集已停止")
-    
-    def _on_save_clicked(self):
-        """
-        保存按钮点击处理
-        """
-        self.logger.info("保存数据")
-        self.workspace_panel.append_log("正在保存数据...", "INFO")
-        self.statusBar().showMessage("正在保存数据...")
-    
-    def _on_export_clicked(self):
-        """
-        导出按钮点击处理
-        """
-        self.logger.info("导出报告")
-        self.workspace_panel.append_log("正在导出报告...", "INFO")
-        self.statusBar().showMessage("正在导出报告...")
-    
-    def _on_settings_clicked(self):
-        """
-        设置按钮点击处理
-        """
-        self.logger.info("打开设置")
-        self.workspace_panel.append_log("打开设置对话框", "INFO")
-        self.statusBar().showMessage("设置已打开")
-    
-    def _on_workflow_card_selected(self, title):
-        """
-        流程卡片选择处理
+        处理流程选择事件
         
-        @param {str} title - 选中的卡片标题
+        Args:
+            process_data (dict): 选中的流程数据
         """
-        self.logger.info(f"选中流程卡片: {title}")
-        self.workspace_panel.append_log(f"执行流程: {title}", "INFO")
-        self.statusBar().showMessage(f"正在执行: {title}")
-    
-    def _on_chat_message_sent(self, message):
-        """
-        聊天消息发送处理
+        process_title = process_data.get('title', '未知流程')
+        process_status = process_data.get('status', 'unknown')
         
-        @param {str} message - 发送的消息
-        """
-        self.logger.info("发送AI消息")
-        self.statusBar().showMessage("AI正在处理您的请求...")
-        # 这里会调用系统管理器处理AI消息
-    
-    def _on_status_updated(self, status):
-        """
-        状态更新处理
+        self.log_area.add_log("INFO", f"选择流程: {process_title} (状态: {process_status})")
+        self.statusBar().showMessage(f"当前流程: {process_title}")
         
-        @param {str} status - 状态信息
-        """
-        self.workspace_panel.append_log(status, "INFO")
-        self.statusBar().showMessage(status)
-    
-    def _on_data_received(self, data):
-        """
-        数据接收处理
+        # 可以在这里添加更多处理逻辑，比如在工作区显示流程详情
+        self.work_area.show_process_details(process_data)
         
-        @param {dict} data - 接收到的数据
+    def on_process_action_requested(self, action, process_data):
         """
-        self.logger.info(f"接收到数据: {data}")
-        self.workspace_panel.append_log("接收到新数据", "INFO")
-        self.statusBar().showMessage("接收到新数据")
+        处理流程操作请求
+        
+        Args:
+            action (str): 操作类型
+            process_data (dict): 流程数据
+        """
+        process_title = process_data.get('title', '未知流程')
+        process_id = process_data.get('id', 'unknown')
+        
+        self.log_area.add_log("INFO", f"流程操作: {action} - {process_title}")
+        
+        # 根据操作类型执行相应的处理
+        if action == "start":
+            self.log_area.add_log("INFO", f"启动流程: {process_title}")
+            # 更新左侧边栏中的流程状态
+            self.left_sidebar.update_process_status(process_id, "running")
+            
+        elif action == "pause":
+            self.log_area.add_log("INFO", f"暂停流程: {process_title}")
+            self.left_sidebar.update_process_status(process_id, "paused")
+            
+        elif action == "resume":
+            self.log_area.add_log("INFO", f"继续流程: {process_title}")
+            self.left_sidebar.update_process_status(process_id, "running")
+            
+        elif action == "stop":
+            self.log_area.add_log("INFO", f"停止流程: {process_title}")
+            self.left_sidebar.update_process_status(process_id, "stopped")
+            
+        elif action == "restart":
+            self.log_area.add_log("INFO", f"重新启动流程: {process_title}")
+            self.left_sidebar.update_process_status(process_id, "running")
+            
+        elif action == "edit":
+            self.log_area.add_log("INFO", f"编辑流程: {process_title}")
+            # 这里可以打开编辑对话框
+            
+        elif action == "delete":
+            self.log_area.add_log("WARNING", f"删除流程: {process_title}")
+            # 这里可以显示确认对话框
+            
+        # 更新状态栏
+        self.statusBar().showMessage(f"执行操作: {action} - {process_title}")
+        
+    def on_ai_message_sent(self, message):
+        """
+        处理AI消息发送事件
+        
+        Args:
+            message (str): 发送的消息
+        """
+        self.log_area.add_log("INFO", f"AI对话: {message}")
+        
+    # 菜单事件处理方法
+    def new_project(self):
+        """新建项目"""
+        self.log_area.add_log("INFO", "新建项目")
+        
+    def open_project(self):
+        """打开项目"""
+        self.log_area.add_log("INFO", "打开项目")
+        
+    def open_settings(self):
+        """打开设置"""
+        self.log_area.add_log("INFO", "打开设置")
+        
+    def reset_layout(self):
+        """重置布局"""
+        self.log_area.add_log("INFO", "重置布局")
+        
+    def open_device_manager(self):
+        """打开设备管理"""
+        self.log_area.add_log("INFO", "打开设备管理")
+        
+    def open_plugin_manager(self):
+        """打开插件管理"""
+        self.log_area.add_log("INFO", "打开插件管理")
+        
+    def show_about(self):
+        """显示关于"""
+        self.log_area.add_log("INFO", "显示关于信息")
+
+
+def main():
+    """
+    主函数，用于测试主窗口
+    """
+    app = QApplication(sys.argv)
     
-    def closeEvent(self, event):
-        """
-        窗口关闭事件
-        """
-        self.logger.info("关闭主窗口")
-        # 这里可以添加关闭确认对话框
-        event.accept() 
+    # 创建主窗口
+    main_window = MainWindow()
+    
+    # 显示窗口
+    main_window.show()
+    
+    sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main() 
