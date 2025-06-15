@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 
 """
-Actor基类模块
+基础Actor模块
 
-定义所有Actor的基础功能和通用接口。
+提供Actor的基础功能和接口，基于pykka框架。
 
 @author: PankIns Team
 @version: 1.0.0
@@ -18,9 +18,9 @@ from abc import ABC, abstractmethod
 
 class BaseActor(pykka.ThreadingActor, ABC):
     """
-    Actor基类
+    基础Actor类
     
-    提供所有Actor的通用功能和接口
+    所有Actor的基类，基于pykka.ThreadingActor，提供消息处理、生命周期管理等基础功能
     """
     
     def __init__(self):
@@ -28,7 +28,7 @@ class BaseActor(pykka.ThreadingActor, ABC):
         初始化基础Actor
         """
         super().__init__()
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = logging.getLogger(f"{self.__class__.__name__}")
         self._is_initialized = False
         self._status = "stopped"
         
@@ -75,9 +75,10 @@ class BaseActor(pykka.ThreadingActor, ABC):
         """
         Actor失败时调用
         
-        @param {type} exception_type - 异常类型
-        @param {Exception} exception_value - 异常值
-        @param {traceback} traceback - 异常追踪
+        Args:
+            exception_type: 异常类型
+            exception_value: 异常值
+            traceback: 异常追踪
         """
         self.logger.error(
             f"{self.__class__.__name__} Actor发生异常: {exception_type.__name__}: {exception_value}",
@@ -89,8 +90,11 @@ class BaseActor(pykka.ThreadingActor, ABC):
         """
         接收消息的通用处理
         
-        @param {Any} message - 接收到的消息
-        @returns {Any} 处理结果
+        Args:
+            message: 接收到的消息
+            
+        Returns:
+            Any: 处理结果
         """
         try:
             if not self._is_initialized:
@@ -135,8 +139,11 @@ class BaseActor(pykka.ThreadingActor, ABC):
         """
         子类实现的消息处理方法
         
-        @param {Any} message - 接收到的消息
-        @returns {Any} 处理结果
+        Args:
+            message: 接收到的消息
+            
+        Returns:
+            Any: 处理结果
         """
         pass
     
@@ -144,7 +151,8 @@ class BaseActor(pykka.ThreadingActor, ABC):
         """
         获取Actor状态
         
-        @returns {Dict[str, Any]} Actor状态信息
+        Returns:
+            Dict[str, Any]: Actor状态信息
         """
         return {
             "actor_name": self.__class__.__name__,
@@ -157,10 +165,13 @@ class BaseActor(pykka.ThreadingActor, ABC):
         """
         向其他Actor发送消息
         
-        @param {pykka.ActorRef} actor_ref - 目标Actor引用
-        @param {Any} message - 发送的消息
-        @param {float} timeout - 超时时间（秒）
-        @returns {Optional[Any]} 响应结果
+        Args:
+            actor_ref: 目标Actor引用
+            message: 发送的消息
+            timeout: 超时时间（秒）
+            
+        Returns:
+            Optional[Any]: 响应结果
         """
         try:
             future = actor_ref.ask(message, timeout=timeout)
@@ -169,12 +180,26 @@ class BaseActor(pykka.ThreadingActor, ABC):
             self.logger.error(f"发送消息失败: {e}")
             return None
     
+    def tell_actor(self, actor_ref: pykka.ActorRef, message: Any):
+        """
+        向其他Actor发送单向消息（不等待响应）
+        
+        Args:
+            actor_ref: 目标Actor引用
+            message: 发送的消息
+        """
+        try:
+            actor_ref.tell(message)
+        except Exception as e:
+            self.logger.error(f"发送单向消息失败: {e}")
+    
     def broadcast_message(self, actor_refs: list, message: Any):
         """
         向多个Actor广播消息
         
-        @param {list} actor_refs - Actor引用列表
-        @param {Any} message - 广播的消息
+        Args:
+            actor_refs: Actor引用列表
+            message: 广播的消息
         """
         for actor_ref in actor_refs:
             try:
