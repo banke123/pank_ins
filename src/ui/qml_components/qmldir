@@ -1,0 +1,6 @@
+module qml_components
+
+AIChatPanel 1.0 AIChatPanel.qml
+SystemLogPanel 1.0 SystemLogPanel.qml
+WorkflowSidebar 1.0 WorkflowSidebar.qml
+MainWorkArea 1.0 MainWorkArea.qml 

@@ -1,0 +1,6 @@
+module ui.qml
+DynamicCard 1.0 DynamicCard.qml
+CardContainer 1.0 CardContainer.qml
+CardSystem 1.0 CardSystem.qml
+WorkflowTreeView 1.0 WorkflowTreeView.qml
+AIChatPanel 1.0 AIChatPanel.qml 

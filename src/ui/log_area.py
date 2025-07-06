@@ -35,12 +35,17 @@ class LogArea(QFrame):
             }
         """)
         
+        # 创建主布局
         layout = QVBoxLayout()
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(5)
+        layout.setContentsMargins(18, 16, 18, 16)  # 增加边距
+        layout.setSpacing(10)  # 增加间距
         
         # 日志标题栏
         header_layout = QHBoxLayout()
+        
+        title_layout = QHBoxLayout()
+        title_layout.setContentsMargins(12, 8, 12, 8)  # 增加标题栏边距
+        title_layout.setSpacing(8)
         
         title = QLabel("系统日志")
         title.setFont(QFont("微软雅黑", 11, QFont.Bold))
@@ -63,9 +68,11 @@ class LogArea(QFrame):
         """)
         clear_btn.clicked.connect(self.clear_logs)
         
-        header_layout.addWidget(title)
-        header_layout.addStretch()
-        header_layout.addWidget(clear_btn)
+        title_layout.addWidget(title)
+        title_layout.addStretch()
+        title_layout.addWidget(clear_btn)
+        
+        header_layout.addLayout(title_layout)
         
         layout.addLayout(header_layout)
         

@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
     QSplitter
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal, QTimer
 
 # 导入模块化组件
 from .left_sidebar import LeftSidebar
@@ -27,8 +27,13 @@ class MainWindow(QMainWindow):
     整合所有UI组件，提供主界面
     """
     
+    # 定义信号
+    window_closed = Signal()
+    
     def __init__(self):
         super().__init__()
+        self.ai_actor_ref = None  # AI Actor引用
+        self.pending_futures = {}  # 存储等待中的future {timer_id: (future, container_id, timer)}
         self.setup_ui()
         self.setup_connections()
         
@@ -155,11 +160,12 @@ class MainWindow(QMainWindow):
         main_splitter.addWidget(self.ai_chat_panel)
         
         # 设置主分割器的比例
-        main_splitter.setSizes([250, 900, 350])  # 左:中:右 = 1:3.6:1.4
+        main_splitter.setSizes([290, 860, 350])  # 左:中:右 = 调整左侧宽度
         
         # 设置布局
         layout = QVBoxLayout()
-        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setContentsMargins(20, 20, 20, 20)  # 进一步增加主窗口边距
+        layout.setSpacing(12)  # 增加间距
         layout.addWidget(main_splitter)
         central_widget.setLayout(layout)
         
@@ -168,17 +174,54 @@ class MainWindow(QMainWindow):
         设置信号连接
         """
         # 连接左侧边栏信号
-        self.left_sidebar.process_selected.connect(self.on_process_selected)
+        self.left_sidebar.plan_card_clicked.connect(self.on_plan_project_selected)
         
         # 连接AI对话面板信号
         self.ai_chat_panel.message_sent.connect(self.on_ai_message_sent)
         
         # 连接工作区信号
         self.work_area.process_action_requested.connect(self.on_process_action_requested)
+        self.work_area.task_card_clicked.connect(self.on_task_card_clicked)
         
+    def on_plan_project_selected(self, project_data):
+        """
+        处理计划选择事件
+        
+        Args:
+            project_data (dict): 选中的计划数据
+        """
+        project_name = project_data.get('project_name', '未知计划')
+        project_status = project_data.get('status', 'unknown')
+        
+        self.log_area.add_log("INFO", f"选择计划: {project_name} (状态: {project_status})")
+        self.statusBar().showMessage(f"当前计划: {project_name}")
+        
+        # 显示计划的任务在工作区域
+        self.work_area.show_plan_project_tasks(project_data)
+        
+        # 如果需要，可以在这里添加其他处理逻辑
+        print(f"计划已选择: {project_name}, 但工作区保持空白状态")
+        
+    def on_task_card_clicked(self, task_data):
+        """
+        处理任务卡片点击事件
+        
+        Args:
+            task_data (dict): 任务卡片数据
+        """
+        task_name = task_data.get('task_name', '未知任务')
+        signal_type = task_data.get('signal_type', '未知')
+        
+        self.log_area.add_log("INFO", f"选择任务: {task_name} ({signal_type})")
+        self.statusBar().showMessage(f"当前任务: {task_name}")
+        
+        # 这里可以添加具体的任务处理逻辑
+        # 比如：显示任务详情、开始测试等
+        print(f"处理任务: {task_name}")
+
     def on_process_selected(self, process_data):
         """
-        处理流程选择事件
+        处理流程选择事件（保留用于兼容性）
         
         Args:
             process_data (dict): 选中的流程数据
@@ -245,9 +288,117 @@ class MainWindow(QMainWindow):
         Args:
             message (str): 发送的消息
         """
-        self.log_area.add_log("INFO", f"AI对话: {message}")
+        self.log_area.add_log("INFO", f"用户发送消息: {message[:50]}...")
         
-    # 菜单事件处理方法
+        # 如果AI Actor已连接，发送消息进行处理
+        if self.ai_actor_ref:
+            try:
+                # 创建用户容器ID（可以基于会话或用户标识）
+                container_id = "main_window_user"
+                
+                # 发送流式消息到AI Actor进行处理
+                ai_message = {
+                    "action": "process_message_stream",
+                    "container_id": container_id,
+                    "content": message
+                }
+                
+                # 使用pykka的ask方法非阻塞获取future
+                future = self.ai_actor_ref.ask(ai_message, block=False)
+                
+                # 创建定时器来检查future状态
+                timer = QTimer()
+                timer_id = id(timer)  # 使用timer对象的id作为唯一标识
+                timer.timeout.connect(lambda: self.check_ai_future(timer_id))
+                
+                # 存储future和相关信息
+                self.pending_futures[timer_id] = (future, container_id, timer)
+                
+                # 每100ms检查一次
+                timer.start(100)
+                
+                self.log_area.add_log("INFO", "AI消息已发送，等待响应...")
+                
+            except Exception as e:
+                self.log_area.add_log("ERROR", f"发送AI消息失败: {e}")
+                # 显示错误消息
+                self.ai_chat_panel.add_ai_response(f"抱歉，AI服务暂时不可用: {str(e)}")
+        else:
+            self.log_area.add_log("WARNING", "AI Actor未连接")
+            self.ai_chat_panel.add_ai_response("抱歉，AI服务尚未启动，请稍后再试。")
+    
+    def check_ai_future(self, timer_id):
+        """
+        检查AI Future的状态
+        
+        Args:
+            timer_id: 定时器ID
+        """
+        if timer_id not in self.pending_futures:
+            return
+            
+        future, container_id, timer = self.pending_futures[timer_id]
+        
+        try:
+            # 尝试非阻塞获取结果（使用很短的超时）
+            try:
+                result = future.get(timeout=0.001)  # 1毫秒超时，如果没完成会抛出异常
+                
+                # 如果能获取到结果，说明已完成
+                timer.stop()
+                
+                if result.get("status") == "success":
+                    ai_response = result.get("response", "AI处理完成，但无回复内容。")
+                    self.ai_chat_panel.add_ai_response(ai_response)
+                    self.log_area.add_log("INFO", "AI响应已显示")
+                else:
+                    error_msg = result.get("message", "未知错误")
+                    self.ai_chat_panel.add_ai_response(f"处理失败: {error_msg}")
+                    self.log_area.add_log("ERROR", f"AI处理失败: {error_msg}")
+                
+                # 清理
+                del self.pending_futures[timer_id]
+                
+            except Exception:
+                # 如果get超时，说明还没完成，继续等待
+                # 这里不是错误，只是结果还没准备好
+                pass
+                
+        except Exception as e:
+            # 处理其他异常
+            timer.stop()
+            self.log_area.add_log("ERROR", f"检查AI响应时发生错误: {e}")
+            self.ai_chat_panel.add_ai_response(f"检查AI响应时发生错误: {str(e)}")
+            
+            # 清理
+            if timer_id in self.pending_futures:
+                del self.pending_futures[timer_id]
+
+    def closeEvent(self, event):
+        """
+        重写关闭事件，发射窗口关闭信号，清理pending futures
+        """
+        # 清理所有pending futures
+        for timer_id, (future, container_id, timer) in self.pending_futures.items():
+            try:
+                timer.stop()
+            except Exception as e:
+                print(f"清理定时器失败: {e}")
+        self.pending_futures.clear()
+        
+        self.window_closed.emit()
+        super().closeEvent(event)
+
+    def set_ai_actor_ref(self, ai_actor_ref):
+        """
+        设置AI Actor引用
+        
+        Args:
+            ai_actor_ref: AI Actor的引用
+        """
+        self.ai_actor_ref = ai_actor_ref
+        self.log_area.add_log("INFO", "AI Actor连接成功")
+
     def new_project(self):
         """新建项目"""
         self.log_area.add_log("INFO", "新建项目")
@@ -277,20 +428,20 @@ class MainWindow(QMainWindow):
         self.log_area.add_log("INFO", "显示关于信息")
 
 
-def main():
-    """
-    主函数，用于测试主窗口
-    """
-    app = QApplication(sys.argv)
+# def main():
+#     """
+#     主函数，用于测试主窗口
+#     """
+#     app = QApplication(sys.argv)
     
-    # 创建主窗口
-    main_window = MainWindow()
+#     # 创建主窗口
+#     main_window = MainWindow()
     
-    # 显示窗口
-    main_window.show()
+#     # 显示窗口
+#     main_window.show()
     
-    sys.exit(app.exec())
+#     sys.exit(app.exec())
 
 
-if __name__ == "__main__":
-    main() 
+# if __name__ == "__main__":
+#     main() 

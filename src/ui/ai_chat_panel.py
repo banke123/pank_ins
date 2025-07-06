@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit, 
     QLineEdit, QPushButton, QScrollArea, QWidget, QPlainTextEdit
 )
-from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtGui import QFont, QTextCursor, QKeySequence
 from datetime import datetime
 import markdown
@@ -24,6 +24,7 @@ class MessageWidget(QFrame):
         self.message = message
         self.is_user = is_user
         self.timestamp = timestamp or datetime.now()
+        self.message_label = None  # 存储消息标签的引用
         self.setup_ui()
         
     def setup_ui(self):
@@ -64,11 +65,11 @@ class MessageWidget(QFrame):
         # 消息内容 - 支持Markdown和文本选择
         if self.is_user:
             # 用户消息使用QLabel，支持文本选择
-            message_label = QLabel(self.message)
-            message_label.setWordWrap(True)
-            message_label.setFont(QFont("微软雅黑", 10))
-            message_label.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
-            message_label.setStyleSheet("""
+            self.message_label = QLabel(self.message)
+            self.message_label.setWordWrap(True)
+            self.message_label.setFont(QFont("微软雅黑", 10))
+            self.message_label.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
+            self.message_label.setStyleSheet("""
                 QLabel {
                     background-color: #667eea;
                     color: white;
@@ -81,21 +82,21 @@ class MessageWidget(QFrame):
                     background-color: rgba(255, 255, 255, 0.3);
                 }
             """)
-            message_label.setAlignment(Qt.AlignRight)
+            self.message_label.setAlignment(Qt.AlignRight)
         else:
             # AI消息使用QLabel支持HTML渲染和文本选择
-            message_label = QLabel()
-            message_label.setWordWrap(True)
-            message_label.setFont(QFont("微软雅黑", 10))
-            message_label.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
+            self.message_label = QLabel()
+            self.message_label.setWordWrap(True)
+            self.message_label.setFont(QFont("微软雅黑", 10))
+            self.message_label.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
             
             # 将Markdown转换为HTML
             html_content = markdown.markdown(self.message, extensions=['codehilite', 'fenced_code', 'tables'])
-            message_label.setText(html_content)
-            message_label.setTextFormat(Qt.RichText)
+            self.message_label.setText(html_content)
+            self.message_label.setTextFormat(Qt.RichText)
             
             # 设置样式
-            message_label.setStyleSheet("""
+            self.message_label.setStyleSheet("""
                 QLabel {
                     background-color: #f7fafc;
                     color: #2d3748;
@@ -110,19 +111,35 @@ class MessageWidget(QFrame):
                     color: white;
                 }
             """)
-            message_label.setAlignment(Qt.AlignLeft)
+            self.message_label.setAlignment(Qt.AlignLeft)
             
         # 消息对齐
         message_layout = QHBoxLayout()
         if self.is_user:
             message_layout.addStretch()
-            message_layout.addWidget(message_label)
+            message_layout.addWidget(self.message_label)
         else:
-            message_layout.addWidget(message_label)
+            message_layout.addWidget(self.message_label)
             message_layout.addStretch()
             
         layout.addLayout(message_layout)
         self.setLayout(layout)
+    
+    def update_content(self, new_message):
+        """
+        更新消息内容（用于流式响应）
+        
+        Args:
+            new_message (str): 新的消息内容
+        """
+        if self.message_label:
+            self.message = new_message
+            if self.is_user:
+                self.message_label.setText(new_message)
+            else:
+                # AI消息转换为HTML
+                html_content = markdown.markdown(new_message, extensions=['codehilite', 'fenced_code', 'tables'])
+                self.message_label.setText(html_content)
 
 
 class AIChatPanel(QFrame):
@@ -138,6 +155,8 @@ class AIChatPanel(QFrame):
     def __init__(self):
         super().__init__()
         self.messages = []  # 存储消息历史
+        self.current_stream_widget = None  # 当前流式响应的消息组件
+        self.stream_buffer = ""  # 流式响应缓冲区
         self.setup_ui()
         self.add_welcome_message()
         
@@ -153,9 +172,10 @@ class AIChatPanel(QFrame):
             }
         """)
         
+        # 创建主布局
         layout = QVBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        layout.setContentsMargins(18, 20, 18, 20)  # 增加边距
+        layout.setSpacing(12)  # 增加间距
         
         # 标题栏（简化版，移除状态）
         self.create_header(layout)
@@ -186,7 +206,8 @@ class AIChatPanel(QFrame):
         header.setFixedHeight(50)
         
         header_layout = QHBoxLayout()
-        header_layout.setContentsMargins(20, 12, 20, 12)
+        header_layout.setContentsMargins(18, 12, 18, 12)  # 增加头部边距
+        header_layout.setSpacing(10)
         
         # AI助手标题
         title = QLabel("🤖 AI智能助手")
@@ -263,8 +284,8 @@ class AIChatPanel(QFrame):
         input_frame.setFixedHeight(120)  # 增加高度以容纳多行输入
         
         input_layout = QHBoxLayout()
-        input_layout.setContentsMargins(15, 15, 15, 15)
-        input_layout.setSpacing(10)
+        input_layout.setContentsMargins(12, 8, 12, 8)  # 增加输入区域边距
+        input_layout.setSpacing(8)
         
         # 多行输入框
         self.input_field = QPlainTextEdit()
@@ -376,8 +397,8 @@ class AIChatPanel(QFrame):
         # 插入到消息布局中（在弹性空间之前）
         self.message_layout.insertWidget(self.message_layout.count() - 1, message_widget)
         
-        # 滚动到底部 - 确保始终显示最新消息
-        QTimer.singleShot(50, self.scroll_to_bottom)
+        # 直接滚动到底部，不使用定时器
+        self.scroll_to_bottom()
         
         # 存储消息
         self.messages.append({
@@ -385,6 +406,8 @@ class AIChatPanel(QFrame):
             'is_user': is_user,
             'timestamp': datetime.now()
         })
+        
+        return message_widget
         
     def scroll_to_bottom(self):
         """
@@ -407,139 +430,73 @@ class AIChatPanel(QFrame):
         # 清空输入框
         self.input_field.clear()
         
-        # 发送信号
+        # 发送信号 - 由外部处理AI回复
         self.message_sent.emit(message)
         
-        # 模拟AI回复（延迟1秒）
-        QTimer.singleShot(1000, lambda: self.simulate_ai_response(message))
-        
-    def simulate_ai_response(self, user_message):
+    def add_ai_response(self, response):
         """
-        模拟AI回复，支持Markdown格式
+        添加AI回复消息 - 由外部调用
         
         Args:
-            user_message (str): 用户消息
+            response (str): AI回复内容
         """
-        # 增强的回复逻辑，支持Markdown
-        responses = {
-            "你好": """您好！很高兴为您服务。
-
-## 我可以帮助您：
-- 🔧 **设备控制** - 示波器操作和配置
-- 📊 **数据分析** - 波形数据处理
-- 🛠️ **技术支持** - 专业问题解答
-- 📋 **报告生成** - 自动化测试报告
-
-有什么可以帮助您的吗？""",
-            
-            "示波器": """## 示波器控制功能
-
-我可以帮助您进行以下操作：
-
-### 基本控制
-- **连接设备** - 建立通信连接
-- **参数设置** - 配置采样率、触发等
-- **数据采集** - 实时波形捕获
-
-### 高级功能  
-- **自动测量** - 频率、幅值、相位等
-- **波形分析** - FFT、滤波、统计分析
-- **数据导出** - 支持多种格式
-
-请告诉我您需要进行什么具体操作？""",
-            
-            "测试": """## 测试功能说明
-
-### 支持的测试类型：
-1. **信号完整性测试**
-   - 上升时间测量
-   - 过冲/下冲分析
-   - 眼图测试
-
-2. **频域分析**
-   - 频谱分析
-   - 谐波失真测试
-   - 噪声分析
-
-3. **自动化测试**
-   ```python
-   # 示例代码
-   def run_test():
-       scope.connect()
-       scope.set_trigger()
-       data = scope.capture()
-       return analyze(data)
-   ```
-
-请描述您的具体测试需求。""",
-            
-            "帮助": """# AI助手帮助文档
-
-## 🚀 快速开始
-我是您的专业AI助手，专门为示波器控制和测试而设计。
-
-## 📋 主要功能
-
-### 设备控制
-- **连接管理** - 自动检测和连接设备
-- **参数配置** - 智能参数推荐
-- **实时监控** - 设备状态实时显示
-
-### 数据分析  
-- **波形处理** - 滤波、平滑、去噪
-- **测量计算** - 自动测量各种参数
-- **统计分析** - 数据统计和趋势分析
-
-### 报告生成
-- **自动报告** - 一键生成测试报告
-- **图表生成** - 专业图表和波形图
-- **数据导出** - 支持Excel、PDF等格式
-
-## 💡 使用技巧
-- 使用 **关键词** 快速获取帮助
-- 支持 `代码块` 和 **格式化文本**
-- 可以询问具体的技术问题
-- **选中文本** 可以复制内容
-
-## ⌨️ 快捷键
-- **Enter** - 换行
-- **Ctrl+Enter** - 发送消息
-- **鼠标选择** - 选中复制文本
-
-有任何问题都可以随时询问我！"""
-        }
+        self.add_message(response, is_user=False)
         
-        # 查找匹配的回复
-        ai_response = None
-        for keyword, response in responses.items():
-            if keyword in user_message:
-                ai_response = response
-                break
-                
-        if not ai_response:
-            ai_response = f"""我理解您说的是：「**{user_message}**」
-
-## 🤔 需要更多信息
-我正在学习如何更好地回答这个问题。
-
-### 建议：
-- 请您 **详细描述** 具体需求
-- 可以使用 `关键词` 如：示波器、测试、帮助等
-- 我会根据您的问题提供 **专业建议**
-
-### 常用功能：
-- 设备控制和配置
-- 数据分析和处理  
-- 测试流程指导
-- 技术问题解答
-
-### 💡 提示
-您可以**选中并复制**这些文字内容，也可以使用**多行输入**发送长文本。
-
-我会尽力帮助您！"""
+    @Slot()
+    def start_stream_response(self):
+        """开始流式响应显示"""
+        print("开始流式响应")
+        
+        # 创建一个空的AI消息组件
+        self.current_stream_widget = MessageWidget("", is_user=False)
+        
+        # 插入到消息布局中（在弹性空间之前）
+        self.message_layout.insertWidget(self.message_layout.count() - 1, self.current_stream_widget)
+        
+        # 清空缓冲区
+        self.stream_buffer = ""
+        
+        # 直接滚动到底部，不使用定时器
+        self.scroll_to_bottom()
+    
+    @Slot(str)
+    def append_stream_chunk(self, chunk):
+        """
+        追加流式响应片段（线程安全）
+        
+        Args:
+            chunk (str): 响应片段
+        """
+        print(f"追加流式片段: {chunk}")
+        
+        if self.current_stream_widget is None:
+            self.start_stream_response()
+        
+        # 添加到缓冲区
+        self.stream_buffer += chunk
+        
+        # 直接更新消息组件的内容
+        self.current_stream_widget.update_content(self.stream_buffer)
+        
+        # 直接滚动到底部，不使用定时器
+        self.scroll_to_bottom()
+    
+    @Slot()
+    def finish_stream_response(self):
+        """结束流式响应"""
+        print("结束流式响应")
+        
+        if self.current_stream_widget:
+            # 存储最终消息
+            self.messages.append({
+                'message': self.stream_buffer,
+                'is_user': False,
+                'timestamp': datetime.now()
+            })
             
-        # 添加AI回复
-        self.add_message(ai_response, is_user=False)
+            # 清理状态
+            self.current_stream_widget = None
+            self.stream_buffer = ""
         
     def clear_chat(self):
         """
